@@ -11,6 +11,10 @@ DISCOVERY_PORT="${DISCOVERY_PORT:-30303}"
 P2P_PORT="${P2P_PORT:-30303}"
 ADDITIONAL_ARGS=""
 BINARY="./base-reth-node"
+NODE_TYPE="${NODE_TYPE:-base}"
+RETH_HISTORICAL_PROOFS="${RETH_HISTORICAL_PROOFS:-false}"
+RETH_HISTORICAL_PROOFS_STORAGE_PATH="${RETH_HISTORICAL_PROOFS_STORAGE_PATH:-}"
+LOG_LEVEL="${LOG_LEVEL:-info}"
 
 if [[ -z "${RETH_CHAIN:-}" ]]; then
     echo "expected RETH_CHAIN to be set" 1>&2
@@ -25,17 +29,43 @@ else
     echo "Running in vanilla node mode (no Flashblocks URL provided)"
 fi
 
+case "$LOG_LEVEL" in
+    "debug")
+        LOG_LEVEL="vvvv"
+        ;;
+    "warn")
+        LOG_LEVEL="vv"
+        ;;
+    "info"|*)
+        LOG_LEVEL="vvv"
+        ;;
+esac
+
 # Add pruning for base
 if [[ "${RETH_PRUNING_ARGS+x}" = x ]]; then
     echo "Adding pruning arguments: $RETH_PRUNING_ARGS"
     ADDITIONAL_ARGS="$ADDITIONAL_ARGS $RETH_PRUNING_ARGS"
 fi
 
+if [[ "$RETH_HISTORICAL_PROOFS" == "true" && -n "$RETH_HISTORICAL_PROOFS_STORAGE_PATH" ]]; then
+    ADDITIONAL_ARGS="$ADDITIONAL_ARGS --proofs-history --proofs-history.storage-path=$RETH_HISTORICAL_PROOFS_STORAGE_PATH"
+
+    # in this case, we need to run the init script first (idempotent)
+    "$BINARY" initialize-op-proofs \
+        -$LOG_LEVEL \
+        --log.stdout.format json \
+        --chain "$RETH_CHAIN" \
+        --datadir="$RETH_DATA_DIR" \
+        --proofs-history.storage-path=$RETH_HISTORICAL_PROOFS_STORAGE_PATH
+
+    sleep 60
+fi
+
 mkdir -p "$RETH_DATA_DIR"
 echo "$OP_NODE_L2_ENGINE_AUTH_RAW" > "$OP_NODE_L2_ENGINE_AUTH"
 
 exec "$BINARY" node \
-  -vvv \
+  -$LOG_LEVEL \
   --datadir="$RETH_DATA_DIR" \
   --log.stdout.format json \
   --ws \
